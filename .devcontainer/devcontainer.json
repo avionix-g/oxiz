@@ -4,11 +4,41 @@
   "image": "oxiz-devcontainer:latest",
   "workspaceFolder": "/src",
   "workspaceMount": "source=${localWorkspaceFolder},target=/src,type=bind",
-  "mounts": [
-    // Host Nix store + daemon socket (NIX_REMOTE=daemon in the image).
-    "source=/nix,target=/nix,type=bind",
-    // Container-private target/: root-owned files and absolute-path fingerprints break sharing with the host.
-    "source=oxiz-target,target=/src/target,type=volume"
+  // Convey the host timezone as an IANA zone string.
+  //
+  // Runs on the HOST before container create: resolves /etc/localtime to `<Zone>` and writes an
+  // env-file consumed via `--env-file` below (Docker and Podman). Falls back to UTC. The bare zone
+  // name resolves against the container's own tzdata, so no host path crosses the boundary.
+  "initializeCommand": "bash -c 'z=$(readlink -f /etc/localtime); z=${z##*/zoneinfo/}; echo TZ=${z:-UTC} > ${localWorkspaceFolder}/.devcontainer/.host-tz.env'",
+  "runArgs": [
+    // Host timezone (written by initializeCommand; git-ignored, host-specific).
+    "--env-file",
+    "${localWorkspaceFolder}/.devcontainer/.host-tz.env"
   ],
-  "postCreateCommand": "git config --global --add safe.directory /src"
+  "mounts": [
+    // Host Nix store; carries the nix-daemon socket (NIX_REMOTE=daemon in the image).
+    "source=/nix,target=/nix,type=bind",
+
+    // Cargo `./target` cache.
+    //
+    // Container-private (shadows the repo's): a root container litters a shared target/ with
+    // root-owned files, and cargo fingerprints embed absolute paths (/src vs. host path).
+    // Named volume persists across container rebuilds, unlike /root.
+    "source=oxiz-target,target=/src/target,type=volume",
+
+    // Per-container Claude state (credentials, sessions).
+    // ${devcontainerId} is stable across rebuilds but unique per project.
+    "source=claude-code-config-${devcontainerId},target=/home/node/.claude,type=volume",
+
+    // Host global Claude config, read-only.
+    "source=${localEnv:HOME}/.claude/skills,target=/home/node/.claude/skills,type=bind,readonly",
+    "source=${localEnv:HOME}/.claude/CLAUDE.md,target=/home/node/.claude/CLAUDE.md,type=bind,readonly",
+
+    // Host Claude settings, read-only, at a SIDECAR path: the CLI mutates settings.json.
+    // Seeded into the writable volume by `postCreateCommand`.
+    "source=${localEnv:HOME}/.claude/settings.json,target=/home/node/.claude-host-settings.json,type=bind,readonly"
+  ],
+  // 1. Mark Git repo safe (host-owned repo, root container).
+  // 2. Seed ~/.claude/settings.json from the sidecar.
+  "postCreateCommand": "git config --global --add safe.directory /src; if [ ! -f /home/node/.claude/settings.json ]; then cp /home/node/.claude-host-settings.json /home/node/.claude/settings.json; fi"
 }

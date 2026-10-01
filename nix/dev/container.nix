@@ -3,7 +3,11 @@
 # The container has no Nix store of its own: devcontainer.json bind-mounts host
 # /nix and talks to the host nix-daemon (NIX_REMOTE=daemon), so the
 # /nix-profile symlinks resolve only because the host store holds the closure.
-{ pkgs, toolchain }:
+{
+  pkgs,
+  toolchain,
+  claude-code,
+}:
 let
   baseImage = pkgs.dockerTools.pullImage {
     # Bump: nix run nixpkgs#nix-prefetch-docker -- --image-name debian --image-tag 13-slim --os linux --arch amd64
@@ -20,20 +24,44 @@ let
     name = "oxiz-dev-profile";
     extraPrefix = "/nix-profile";
     paths = toolchain.packages ++ [
-      # debian-slim ships no compiler; same cc the devShell gets
-      pkgs.stdenv.cc
-      pkgs.nix
-      pkgs.cacert
+      claude-code
+
+      pkgs.cacert  # TLS for cargo/nix fetches
+      pkgs.nix  # nix client in container
+      pkgs.stdenv.cc  # debian-slim ships no compiler; same cc the devShell gets
+
+			# General utils
+			pkgs.fd
       pkgs.git
+      pkgs.iputils
       pkgs.less
+      pkgs.netcat
       pkgs.ripgrep
+      pkgs.sd
+      pkgs.tree
     ];
   };
+
+  managedSettingsFile = pkgs.writeText "managed-settings.json" (
+    builtins.toJSON {
+      permissions.defaultMode = "bypassPermissions";
+      enableAllProjectMcpServers = true;
+      skipDangerousModePermissionPrompt = true;
+    }
+  );
 in
 pkgs.dockerTools.buildLayeredImage {
   name = "oxiz-devcontainer";
   tag = "latest";
   fromImage = baseImage;
+  # Max-precedence Claude Code policy, copied into the image's own /etc layer so it survives the
+  # host-/nix bind mount.
+  extraCommands = ''
+    mkdir -p etc/claude-code
+    cp ${managedSettingsFile} etc/claude-code/managed-settings.json
+    chmod 0644 etc/claude-code/managed-settings.json
+  '';
+
   passthru = { inherit profile; };
   contents = [ profile ];
 
@@ -45,6 +73,9 @@ pkgs.dockerTools.buildLayeredImage {
       "NIX_REMOTE=daemon"
       "NIX_CONFIG=experimental-features = nix-command flakes"
       "OXIZ_DEVCONTAINER=1"
+      # Claude CLI refuses bypass-permissions as root outside a sandbox
+      "IS_SANDBOX=1"
+      "CLAUDE_CONFIG_DIR=/home/node/.claude"
     ];
     WorkingDir = "/src";
   };
