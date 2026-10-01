@@ -1,0 +1,14 @@
+{
+  // Image built from the flake: `nix build .#devcontainerImage && docker load < result`
+  "name": "oxiz",
+  "image": "oxiz-devcontainer:latest",
+  "workspaceFolder": "/src",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/src,type=bind",
+  "mounts": [
+    // Host Nix store + daemon socket (NIX_REMOTE=daemon in the image).
+    "source=/nix,target=/nix,type=bind",
+    // Container-private target/: root-owned files and absolute-path fingerprints break sharing with the host.
+    "source=oxiz-target,target=/src/target,type=volume"
+  ],
+  "postCreateCommand": "git config --global --add safe.directory /src"
+}

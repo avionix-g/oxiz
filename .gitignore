@@ -49,3 +49,8 @@ fuzz/artifacts/
 
 # Rustc ICE dumps
 rustc-ice-*.txt
+
+# nix / direnv
+/result
+/result-*
+/.direnv/
