@@ -11,6 +11,13 @@ let
       hash = "sha256-eyF3ELv81xEgh9Km0Ehwos87e4VJ82cfsp53RCAtuTo=";
     };
   });
+  # The llvm-tools component lives outside the toolchain's PATH; expose only what scripts need.
+  llvmTools = pkgs.runCommand "rust-llvm-tools" { } ''
+    mkdir -p $out/bin
+    for t in llvm-profdata llvm-cov; do
+      ln -s ${rust}/lib/rustlib/${pkgs.stdenv.hostPlatform.rust.rustcTarget}/bin/$t $out/bin/$t
+    done
+  '';
 in
 {
   packages = [
@@ -38,10 +45,10 @@ in
     # scripts/flamegraph.sh
     pkgs.cargo-flamegraph
     pkgs.inferno
-    pkgs.linuxPackages.perf
+    pkgs.perf
 
-    # scripts/pgo_build.sh (llvm-profdata)
-    pkgs.llvm
+    # scripts/pgo_build.sh: llvm-profdata from rustc's own LLVM (profile formats must match)
+    llvmTools
 
     # oxiz-vscode
     pkgs.nodejs

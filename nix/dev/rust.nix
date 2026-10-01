@@ -15,6 +15,7 @@ fenix.combine [
   ((fenix.toolchainOf spec).withComponents [
     "cargo"
     "clippy"
+    "llvm-tools"
     "rust-src"
     "rust-std"
     "rustc"
